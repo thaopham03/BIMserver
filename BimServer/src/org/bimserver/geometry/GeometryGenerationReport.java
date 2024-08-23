@@ -121,7 +121,7 @@ public class GeometryGenerationReport {
 		ObjectNode renderEngine = objectMapper.createObjectNode();
 		result.set("renderEngine", renderEngine);
 		renderEngine.put("name", renderEngineName);
-		renderEngine.set("version", renderEngineVersion.toJson());
+		renderEngine.set("version", renderEngineVersion.toHtml());
 		renderEngine.put("pluginVersion", renderEnginePluginVersion);
 		
 		ObjectNode ifcModel = objectMapper.createObjectNode();
