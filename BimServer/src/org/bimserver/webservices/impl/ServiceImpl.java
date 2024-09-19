@@ -1172,7 +1172,7 @@ public class ServiceImpl extends GenericServiceImpl implements ServiceInterface 
 	}
 
 	private SLongCheckinActionState checkinInternal(Long topicId, final Long poid, final String comment, Long deserializerOid, Long fileSize, String fileName, InputStream originalInputStream, Boolean merge, Boolean sync,
-			final DatabaseSession readOnlySession, String username, String userUsername, Project project, Path file, long newServiceId)
+													final DatabaseSession readOnlySession, String username, String userUsername, Project project, Path file, long newServiceId)
 			throws BimserverDatabaseException, IOException, DeserializeException, CannotBeScheduledException, ServiceException {
 
 		DeserializerPluginConfiguration deserializerPluginConfiguration = readOnlySession.get(StorePackage.eINSTANCE.getDeserializerPluginConfiguration(), deserializerOid, OldQuery.getDefault());
@@ -1180,38 +1180,21 @@ public class ServiceImpl extends GenericServiceImpl implements ServiceInterface 
 			throw new UserException("Deserializer with oid " + deserializerOid + " not found");
 		} else {
 			PluginBundleVersion pluginBundleVersion = deserializerPluginConfiguration.getPluginDescriptor().getPluginBundleVersion();
+			// Extract the plugin version string early
+			String pluginVersionString = pluginBundleVersion.getGroupId() + "." + pluginBundleVersion.getArtifactId() + ":" + pluginBundleVersion.getVersion();
+
 			Plugin plugin = getBimServer().getPluginManager().getPlugin(deserializerPluginConfiguration.getPluginDescriptor().getPluginClassName(), true);
 			if (plugin != null) {
-				if (plugin instanceof DeserializerPlugin) {
-					DeserializerPlugin deserializerPlugin = (DeserializerPlugin) plugin;
-					Deserializer deserializer = deserializerPlugin.createDeserializer(getBimServer().getPluginSettingsCache().getPluginSettings(deserializerOid));
-					OutputStream outputStream = Files.newOutputStream(file);
-					InputStream inputStream = new MultiplexingInputStream(originalInputStream, outputStream);
-					deserializer.init(getBimServer().getDatabase().getMetaDataManager().getPackageMetaData(project.getSchema()));
-
-					IfcModelInterface model = null;
-					try {
-						model = deserializer.read(inputStream, fileName, fileSize, null);
-					} finally {
-						inputStream.close();
-					}
-
-					CheckinDatabaseAction checkinDatabaseAction = new CheckinDatabaseAction(getBimServer(), null, getInternalAccessMethod(), poid, getAuthorization(), model, comment, fileName, merge, newServiceId, topicId);
-					LongCheckinAction longAction = new LongCheckinAction(topicId, getBimServer(), username, userUsername, getAuthorization(), checkinDatabaseAction);
-					getBimServer().getLongActionManager().start(longAction);
-					if (sync) {
-						longAction.waitForCompletion();
-						clearCheckinInProgress(poid);
-					}
-					ProgressTopic progressTopic = getBimServer().getNotificationsManager().getProgressTopic(topicId);
-					return (SLongCheckinActionState) getBimServer().getSConverter().convertToSObject(progressTopic.getLastProgress());
-				} else if (plugin instanceof StreamingDeserializerPlugin) {
+				if (plugin instanceof StreamingDeserializerPlugin) {
 					StreamingDeserializerPlugin streaminDeserializerPlugin = (StreamingDeserializerPlugin) plugin;
 					StreamingDeserializer streamingDeserializer = streaminDeserializerPlugin.createDeserializer(getBimServer().getPluginSettingsCache().getPluginSettings(deserializerPluginConfiguration.getOid()));
 					streamingDeserializer.init(getBimServer().getDatabase().getMetaDataManager().getPackageMetaData(project.getSchema()));
 					RestartableInputStream restartableInputStream = new RestartableInputStream(originalInputStream, file);
+
+					// Pass the extracted version string
 					StreamingCheckinDatabaseAction checkinDatabaseAction = new StreamingCheckinDatabaseAction(getBimServer(), null, getInternalAccessMethod(), poid, getAuthorization(), comment, fileName, restartableInputStream,
-							streamingDeserializer, fileSize, newServiceId, pluginBundleVersion, topicId);
+							streamingDeserializer, fileSize, newServiceId, pluginVersionString, topicId);
+
 					LongStreamingCheckinAction longAction = new LongStreamingCheckinAction(topicId, getBimServer(), username, userUsername, getAuthorization(), checkinDatabaseAction);
 					getBimServer().getLongActionManager().start(longAction);
 					ProgressTopic progressTopic = null;
@@ -1233,6 +1216,7 @@ public class ServiceImpl extends GenericServiceImpl implements ServiceInterface 
 			}
 		}
 	}
+
 
 	@Override
 	public SLongCheckinActionState checkinSync(final Long poid, final String comment, Long deserializerOid, Long fileSize, String fileName, DataHandler dataHandler, Boolean merge) throws ServerException, UserException {
